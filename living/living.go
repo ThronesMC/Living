@@ -355,30 +355,42 @@ func (l *Living) MoveToTarget(target mgl64.Vec3, jumpVelocity float64) {
 	low := l.tx.Block(checkPos)
 	high := l.tx.Block(checkPos.Add(cube.Pos{0, 1, 0}))
 
-	_, solidLow := low.Model().(model.Solid)
-	_, solidHigh := high.Model().(model.Solid)
-
 	move := baseMove
-	if solidLow {
-		maxY := 0.0
-		for _, box := range low.Model().BBox(cube.Pos{}, l.tx) {
-			if h := box.Max()[1]; h > maxY {
-				maxY = h
-			}
-		}
-
-		if !solidHigh {
-			move[1] = min(maxY, jumpVelocity)
-			if l.OnGround() {
-				move[0] *= 0.50
-				move[2] *= 0.50
-			}
-		} else {
-			move[0], move[2] = 0, 0
+	maxYLow := 0.0
+	for _, box := range low.Model().BBox(cube.Pos{}, l.tx) {
+		if h := box.Max()[1]; h > maxYLow {
+			maxYLow = h
 		}
 	}
 
-	if !l.OnGround() && move[1] == 0 {
+	maxYHigh := 0.0
+	for _, box := range high.Model().BBox(cube.Pos{}, l.tx) {
+		if h := box.Max()[1]; h > maxYHigh {
+			maxYHigh = h
+		}
+	}
+
+	// Calculate the effective obstacle height relative to the entity's feet
+	blockY := float64(checkPos.Y())
+	entityFeetY := l.Position().Y()
+	obstacleTopY := blockY + maxYLow
+	effectiveHeight := obstacleTopY - entityFeetY
+
+	// Calculate combined height for high block check
+	combinedHeight := maxYLow + maxYHigh
+
+	// Check if entity should attempt to jump
+	if combinedHeight > jumpVelocity || maxYHigh > jumpVelocity {
+		// Can't jump - stop horizontal movement
+		move[0], move[2] = 0, 0
+	} else if effectiveHeight > 0.01 && effectiveHeight < jumpVelocity && l.OnGround() {
+		// Can jump - apply jump velocity (only when on ground and obstacle is actually above us)
+		move[1] = jumpVelocity
+		move[0] *= 0.50
+		move[2] *= 0.50
+	}
+
+	if !l.OnGround() {
 		move[0] *= 0.25
 		move[2] *= 0.25
 	}
