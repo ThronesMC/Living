@@ -379,11 +379,12 @@ func (l *Living) MoveToTarget(target mgl64.Vec3, jumpVelocity float64) {
 	// Calculate combined height for high block check
 	combinedHeight := maxYLow + maxYHigh
 
+	println(combinedHeight, " ", effectiveHeight, " ", jumpVelocity)
 	// Check if entity should attempt to jump
 	if combinedHeight > jumpVelocity || maxYHigh > jumpVelocity {
 		// Can't jump - stop horizontal movement
 		move[0], move[2] = 0, 0
-	} else if effectiveHeight > 0.01 && effectiveHeight < jumpVelocity && l.OnGround() {
+	} else if effectiveHeight > 0.01 && effectiveHeight <= jumpVelocity && l.OnGround() {
 		// Can jump - apply jump velocity (only when on ground and obstacle is actually above us)
 		move[1] = jumpVelocity
 		move[0] *= 0.50
