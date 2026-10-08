@@ -384,7 +384,6 @@ func (l *Living) MoveToTarget(target mgl64.Vec3, jumpVelocity float64) {
 	// Calculate combined height for high block check
 	combinedHeight := maxYLow + maxYHigh
 
-	println(combinedHeight, " ", effectiveHeight, " ", jumpVelocity)
 	// Check if entity should attempt to jump
 	if combinedHeight > jumpVelocity || maxYHigh > jumpVelocity {
 		// Can't jump - stop horizontal movement
