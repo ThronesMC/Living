@@ -18,11 +18,11 @@ require (
 	github.com/df-mc/goleveldb v1.1.9 // indirect
 	github.com/df-mc/jsonc v1.0.5 // indirect
 	github.com/df-mc/worldupgrader v1.0.22 // indirect
+	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.5 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.20.1 // indirect
-	github.com/nxadm/tail v1.4.11 // indirect
 	github.com/pion/datachannel v1.6.3 // indirect
 	github.com/pion/dtls/v3 v3.1.10 // indirect
 	github.com/pion/ice/v4 v4.4.6 // indirect
@@ -53,4 +53,4 @@ require (
 	golang.org/x/time v0.16.0 // indirect
 )
 
-replace github.com/df-mc/dragonfly => github.com/Studgi/dragonfly v0.0.0-20260628102401-e41639b5de0a
+replace github.com/df-mc/dragonfly => github.com/Studgi/dragonfly v0.0.0-20261007132540-cddc09d80314
