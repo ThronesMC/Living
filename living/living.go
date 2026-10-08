@@ -341,7 +341,14 @@ func (l *Living) Move(deltaPos mgl64.Vec3, deltaYaw, deltaPitch float64) {
 	l.updateFallState(deltaPos[1])
 }
 
-// MoveToTarget Target is assumed to be another Entity or similar struct with position getters.
+// MoveToTarget steps the entity towards target, turning to face it and climbing
+// a step if one is in the way.
+//
+// The step and the turn are applied in a single Move, because every Move sends
+// a movement update to viewers and the client drives its walking animation from
+// how far the entity travelled between updates. A turn sent as its own update
+// carries no distance, so it reads as the entity having stopped, and the
+// animation stops with it.
 func (l *Living) MoveToTarget(target mgl64.Vec3, jumpVelocity float64) {
 	if l.Dead() {
 		return
@@ -353,43 +360,19 @@ func (l *Living) MoveToTarget(target mgl64.Vec3, jumpVelocity float64) {
 		return
 	}
 	dir := delta.Normalize()
-	baseMove := dir.Mul(l.Speed())
+	move := dir.Mul(l.Speed())
 
-	checkOffset := dir.Mul(l.H().Type().BBox(l).Width())
-	checkPos := cube.PosFromVec3(l.Position().Add(checkOffset))
-	low := l.tx.Block(checkPos)
-	high := l.tx.Block(checkPos.Add(cube.Pos{0, 1, 0}))
+	// Look one body width ahead for something to climb.
+	checkPos := cube.PosFromVec3(l.Position().Add(dir.Mul(l.H().Type().BBox(l).Width())))
+	low := blockTop(l.tx, checkPos)
+	high := blockTop(l.tx, checkPos.Add(cube.Pos{0, 1, 0}))
 
-	move := baseMove
-	maxYLow := 0.0
-	for _, box := range low.Model().BBox(cube.Pos{}, l.tx) {
-		if h := box.Max()[1]; h > maxYLow {
-			maxYLow = h
-		}
-	}
+	// How far above the entity's feet the obstacle reaches.
+	rise := float64(checkPos.Y()) + low - l.Position().Y()
 
-	maxYHigh := 0.0
-	for _, box := range high.Model().BBox(cube.Pos{}, l.tx) {
-		if h := box.Max()[1]; h > maxYHigh {
-			maxYHigh = h
-		}
-	}
-
-	// Calculate the effective obstacle height relative to the entity's feet
-	blockY := float64(checkPos.Y())
-	entityFeetY := l.Position().Y()
-	obstacleTopY := blockY + maxYLow
-	effectiveHeight := obstacleTopY - entityFeetY
-
-	// Calculate combined height for high block check
-	combinedHeight := maxYLow + maxYHigh
-
-	// Check if entity should attempt to jump
-	if combinedHeight > jumpVelocity || maxYHigh > jumpVelocity {
-		// Can't jump - stop horizontal movement
-		move[0], move[2] = 0, 0
-	} else if effectiveHeight > 0.01 && effectiveHeight <= jumpVelocity && l.OnGround() {
-		// Can jump - apply jump velocity (only when on ground and obstacle is actually above us)
+	climbable := high <= jumpVelocity && low+high <= jumpVelocity
+	if climbable && rise > 0.01 && rise <= jumpVelocity && l.OnGround() {
+		// Hop up, easing off horizontally while leaving the ground.
 		move[1] = jumpVelocity
 		move[0] *= 0.50
 		move[2] *= 0.50
@@ -400,7 +383,31 @@ func (l *Living) MoveToTarget(target mgl64.Vec3, jumpVelocity float64) {
 		move[2] *= 0.25
 	}
 
-	l.Move(move, 0, 0)
+	// Anything taller than a step is left to collision resolution, which
+	// clamps each axis separately and so slides the entity along the
+	// obstruction. Cancelling the whole horizontal step here instead, as this
+	// used to, stopped an entity dead the moment anything tall was ahead of
+	// it - including while it was walking *past* a wall rather than into it,
+	// which left units stuck against corners they were trying to round.
+
+	yaw, pitch := LookAtExtended(l.Position().Add(mgl64.Vec3{0, l.EyeHeight(), 0}), target)
+	l.Move(move, yaw-l.Rotation().Yaw(), pitch-l.Rotation().Pitch())
+}
+
+// blockTop returns how far up the block at pos reaches, measured from the
+// block's own base, or zero if it does not obstruct.
+//
+// The real position is handed to BBox rather than a zero one: models such as
+// fences, walls and panes inspect their neighbours through it, so a zero
+// position describes the shape of some other block entirely.
+func blockTop(tx *world.Tx, pos cube.Pos) float64 {
+	top := 0.0
+	for _, box := range tx.Block(pos).Model().BBox(pos, tx) {
+		if h := box.Max()[1]; h > top {
+			top = h
+		}
+	}
+	return top
 }
 
 // LookAt ...
