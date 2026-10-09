@@ -544,6 +544,11 @@ func (l *Living) Tick(tx *world.Tx, current int64) {
 	l.data.Vel = m.Velocity()
 	l.onGround = l.checkOnGround()
 	l.updateFallState(delta[1])
+	// Blocks that act on an entity standing in them, such as fire and cobweb,
+	// are triggered from the collision pass Move used to run. The movement
+	// computer does not do it, so it has to happen here or an entity carried
+	// into one of those blocks by gravity alone would never set it off.
+	l.checkEntityInsiders(l.entityType.BBox(l).Translate(l.data.Pos))
 }
 
 // Variant ...
