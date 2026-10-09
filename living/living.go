@@ -530,8 +530,20 @@ func (l *Living) Tick(tx *world.Tx, current int64) {
 	m := l.mc.TickMovement(l, l.Position(), l.Velocity(), l.Rotation(), tx)
 	m.Send()
 
+	// Commit what the movement computer worked out, without going through Move.
+	// Send has already told viewers the new position, and told them the new
+	// velocity, which is what lets a client tell that the entity is moving at
+	// all. Move would send the same position a second time, as an update with
+	// no distance in it, and would resolve collisions a second time against a
+	// delta the computer has already resolved.
+	if l.immobile {
+		return
+	}
+	delta := m.Position().Sub(l.Position())
+	l.data.Pos = m.Position()
 	l.data.Vel = m.Velocity()
-	l.Move(m.Position().Sub(l.Position()), 0, 0)
+	l.onGround = l.checkOnGround()
+	l.updateFallState(delta[1])
 }
 
 // Variant ...
