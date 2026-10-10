@@ -449,15 +449,57 @@ func (l *Living) groundBelow(depth float64) (float64, bool) {
 	return top, found
 }
 
-// applyHover holds a hovering entity at its hover height above the ground.
+const (
+	// hoverReach is how far below itself a hovering entity looks for the ground
+	// it follows. Past that there is nothing to hover over and it falls like
+	// anything else, so this is also the drop it will float down rather than
+	// fall down.
+	hoverReach = 8.0
+
+	// hoverEase is the share of the distance left to its hover height that an
+	// entity closes each tick. Closing a share rather than a fixed step is what
+	// makes it ease in and settle instead of arriving at full speed and
+	// stopping dead, and it cannot overshoot.
+	hoverEase = 0.25
+
+	// hoverRise and hoverFall cap the drift, so following the ground up reads
+	// as a float rather than a jump and following it down as a descent rather
+	// than a drop. Coming down is allowed to be the quicker of the two, which
+	// is the way gravity would have it.
+	hoverRise = 0.08
+	hoverFall = 0.15
+
+	// hoverSettled is how close to its height counts as arrived, below which
+	// the entity holds still rather than chasing float noise.
+	hoverSettled = 0.01
+)
+
+// hoverStep returns how far a hovering entity should drift this tick to close
+// gap, the distance from where it is to its hover height.
 //
-// Gravity still applies to it, which is what carries it down when the ground it
-// was over falls away. This is what ends that fall: at the hover height the
-// entity is handed exactly the upward velocity gravity is about to take back
-// off it, so the two cancel and it rests on air. Correcting its position after
-// the fact instead would let it sink a whole tick's worth of gravity first and
-// pull it back every tick, which at the gravity a unit is built with reads as
-// a bob rather than a hover.
+// Closing a share of what is left rather than a fixed step is what makes the
+// drift ease in: it is quickest when furthest away and slows as it arrives, so
+// it settles rather than stopping dead, and it cannot overshoot and bounce.
+func hoverStep(gap float64) float64 {
+	if math.Abs(gap) < hoverSettled {
+		return 0
+	}
+	return math.Max(math.Min(gap*hoverEase, hoverRise), -hoverFall)
+}
+
+// applyHover drifts a hovering entity towards its hover height above the ground.
+//
+// It takes over the entity's vertical motion while there is ground beneath it
+// to follow: gravity would bring it down at an accelerating fall, which is not
+// how something that floats comes down, and would need catching at the bottom.
+// Easing towards the height in both directions is the whole behaviour - rising
+// as the ground rises, sinking as it falls away, settling gently either way.
+//
+// The drift is applied as velocity rather than by moving the entity, so the
+// movement computer carries it and viewers interpolate it. Correcting the
+// position after the fact instead would mean sinking a tick's worth of gravity
+// and being pulled back every tick, which at the gravity a unit is built with
+// reads as a bob rather than a hover.
 //
 // An entity already moving up is left alone: that is a hop clearing something
 // too tall to float over, and cancelling it would strand the entity against it.
@@ -470,21 +512,19 @@ func (l *Living) applyHover() {
 		return
 	}
 
-	// Deep enough to catch the entity on the way down rather than after it has
-	// already passed the surface, which at a tick's worth of fall it would.
-	top, ok := l.groundBelow(l.hover + 1 + math.Abs(vel[1]))
+	top, ok := l.groundBelow(l.hover + hoverReach)
 	if !ok {
-		// Nothing underneath to hover over, so it keeps falling.
+		// Nothing underneath to hover over, so it falls.
 		return
 	}
 
-	pos := l.Position()
-	if target := top + l.hover; pos[1] <= target+mgl64.Epsilon {
-		pos[1] = target
-		l.data.Pos = pos
-		vel[1] = l.mc.Gravity
-		l.data.Vel = vel
-	}
+	step := hoverStep(top + l.hover - l.Position()[1])
+
+	// The movement computer takes gravity off whatever velocity it is handed,
+	// so handing it the drift plus gravity leaves exactly the drift. A hovering
+	// entity is held up by its hover, not pulled down by its weight.
+	vel[1] = step + l.mc.Gravity
+	l.data.Vel = vel
 }
 
 // blockTop returns how far up the block at pos reaches, measured from the
@@ -799,15 +839,18 @@ func (l *Living) checkEntityInsiders(entityBBox cube.BBox) {
 
 // checkOnGround checks if the player is currently considered to be on the ground.
 func (l *Living) checkOnGround() bool {
-	box := l.entityType.BBox(l).Translate(l.Position())
-
-	// A hovering entity rests on air at a fixed height, so what counts as the
-	// ground for it is whatever is a hover height below its feet. Without this
-	// it is airborne by every measure that asks, and an airborne entity is
-	// taken to have nothing to push off and moves at a quarter of its speed.
+	// A hovering entity rests on air, so it has purchase for as long as there
+	// is ground beneath it to hover over - whether it has settled at its height
+	// or is still drifting towards it. Without this it is airborne by every
+	// measure that asks, and an airborne entity is taken to have nothing to
+	// push off and moves at a quarter of its speed, which on a slow one is
+	// barely moving.
 	if l.hover > 0 {
-		box = box.Translate(mgl64.Vec3{0, -l.hover, 0})
+		_, ok := l.groundBelow(l.hover + hoverReach)
+		return ok
 	}
+
+	box := l.entityType.BBox(l).Translate(l.Position())
 
 	// Create a small area below the entity to check for ground
 	groundCheck := cube.Box(
