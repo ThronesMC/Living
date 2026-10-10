@@ -16,6 +16,16 @@ type Config struct {
 	Drops                       []Drop
 	ImmuneDuration              time.Duration
 	Handler
+
+	// Hover is how far above the ground the entity floats, zero for one that
+	// walks on it.
+	//
+	// A hovering entity is held this far above whatever is beneath it and falls
+	// when that falls away, so it follows the ground rather than ignoring it.
+	// It also counts as standing on the ground while it is at its hover height,
+	// which is what keeps it moving at its own speed: an entity in the air is
+	// taken to have no purchase and moves at a quarter of it.
+	Hover float64
 }
 
 func (c Config) Apply(data *world.EntityData) {
@@ -38,5 +48,6 @@ func (c Config) Apply(data *world.EntityData) {
 		immuneDuration: c.ImmuneDuration,
 		effects:        make(map[effect.Type]effect.Effect),
 		handler:        c.Handler,
+		hover:          c.Hover,
 	}
 }

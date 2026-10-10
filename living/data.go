@@ -23,6 +23,7 @@ type livingData struct {
 	collidedVertically   bool
 
 	onGround  bool
+	hover     float64
 	immobile  bool
 	invisible bool
 	scale     float64

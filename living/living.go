@@ -418,6 +418,75 @@ func (l *Living) MoveToTarget(target mgl64.Vec3, maxClimb float64) {
 	l.Move(move, yaw-l.Rotation().Yaw(), pitch-l.Rotation().Pitch())
 }
 
+// groundBelow returns the height of the highest surface under the entity within
+// depth blocks of its feet, and whether there was one.
+func (l *Living) groundBelow(depth float64) (float64, bool) {
+	box := l.entityType.BBox(l).Translate(l.Position())
+	feet := box.Min()[1]
+
+	low := cube.PosFromVec3(mgl64.Vec3{box.Min()[0], feet - depth, box.Min()[2]})
+	high := cube.PosFromVec3(mgl64.Vec3{box.Max()[0], feet, box.Max()[2]})
+
+	top, found := 0.0, false
+	for x := low[0]; x <= high[0]; x++ {
+		for z := low[2]; z <= high[2]; z++ {
+			// Downwards, so the first hit in a column is the surface.
+			for y := high[1]; y >= low[1]; y-- {
+				pos := cube.Pos{x, y, z}
+				reach := blockTop(l.tx, pos)
+				if reach <= 0 {
+					continue
+				}
+				if surface := float64(pos.Y()) + reach; surface <= feet+mgl64.Epsilon {
+					if !found || surface > top {
+						top, found = surface, true
+					}
+					break
+				}
+			}
+		}
+	}
+	return top, found
+}
+
+// applyHover holds a hovering entity at its hover height above the ground.
+//
+// Gravity still applies to it, which is what carries it down when the ground it
+// was over falls away. This is what ends that fall: at the hover height the
+// entity is handed exactly the upward velocity gravity is about to take back
+// off it, so the two cancel and it rests on air. Correcting its position after
+// the fact instead would let it sink a whole tick's worth of gravity first and
+// pull it back every tick, which at the gravity a unit is built with reads as
+// a bob rather than a hover.
+//
+// An entity already moving up is left alone: that is a hop clearing something
+// too tall to float over, and cancelling it would strand the entity against it.
+func (l *Living) applyHover() {
+	if l.hover <= 0 || l.immobile {
+		return
+	}
+	vel := l.data.Vel
+	if vel[1] > 0 {
+		return
+	}
+
+	// Deep enough to catch the entity on the way down rather than after it has
+	// already passed the surface, which at a tick's worth of fall it would.
+	top, ok := l.groundBelow(l.hover + 1 + math.Abs(vel[1]))
+	if !ok {
+		// Nothing underneath to hover over, so it keeps falling.
+		return
+	}
+
+	pos := l.Position()
+	if target := top + l.hover; pos[1] <= target+mgl64.Epsilon {
+		pos[1] = target
+		l.data.Pos = pos
+		vel[1] = l.mc.Gravity
+		l.data.Vel = vel
+	}
+}
+
 // blockTop returns how far up the block at pos reaches, measured from the
 // block's own base, or zero if it does not obstruct.
 //
@@ -550,6 +619,7 @@ func (l *Living) Tick(tx *world.Tx, current int64) {
 	}
 
 	l.onGround = l.checkOnGround()
+	l.applyHover()
 
 	m := l.mc.TickMovement(l, l.Position(), l.Velocity(), l.Rotation(), tx)
 	m.Send()
@@ -730,6 +800,14 @@ func (l *Living) checkEntityInsiders(entityBBox cube.BBox) {
 // checkOnGround checks if the player is currently considered to be on the ground.
 func (l *Living) checkOnGround() bool {
 	box := l.entityType.BBox(l).Translate(l.Position())
+
+	// A hovering entity rests on air at a fixed height, so what counts as the
+	// ground for it is whatever is a hover height below its feet. Without this
+	// it is airborne by every measure that asks, and an airborne entity is
+	// taken to have nothing to push off and moves at a quarter of its speed.
+	if l.hover > 0 {
+		box = box.Translate(mgl64.Vec3{0, -l.hover, 0})
+	}
 
 	// Create a small area below the entity to check for ground
 	groundCheck := cube.Box(
