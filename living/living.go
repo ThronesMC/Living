@@ -341,15 +341,39 @@ func (l *Living) Move(deltaPos mgl64.Vec3, deltaYaw, deltaPitch float64) {
 	l.updateFallState(deltaPos[1])
 }
 
+// climbClearance is how far above a step an entity's hop reaches, so that it
+// comes down onto the step rather than exactly level with its edge.
+const climbClearance = 0.05
+
+// climbVelocity returns the upward velocity a hop needs to reach climb blocks
+// above the entity's feet.
+//
+// The velocity a hop needs depends on the entity's gravity, which is set per
+// entity: the hop is handed to the movement computer as a velocity and gravity
+// is what brings it back down, so the same velocity on a lighter entity throws
+// it far higher. Every entity was given a velocity of 1, which on the 0.5
+// gravity a warrior has peaks at about the one block it is meant to clear, and
+// on the 0.07 a baby skeleton has peaks above seven.
+//
+// Deriving it from gravity instead has every entity clear the same step, which
+// is what the pathfinder assumes when it offers one. An entity with no gravity
+// never comes down on its own, so it keeps the velocity it was asked for.
+func climbVelocity(gravity, climb float64) float64 {
+	if gravity <= 0 {
+		return climb
+	}
+	return math.Sqrt(2 * gravity * (climb + climbClearance))
+}
+
 // MoveToTarget steps the entity towards target, turning to face it and climbing
-// a step if one is in the way.
+// a step if one is in the way. maxClimb is the tallest step it can take.
 //
 // The step and the turn are applied in a single Move, because every Move sends
 // a movement update to viewers and the client drives its walking animation from
 // how far the entity travelled between updates. A turn sent as its own update
 // carries no distance, so it reads as the entity having stopped, and the
 // animation stops with it.
-func (l *Living) MoveToTarget(target mgl64.Vec3, jumpVelocity float64) {
+func (l *Living) MoveToTarget(target mgl64.Vec3, maxClimb float64) {
 	if l.Dead() {
 		return
 	}
@@ -370,10 +394,10 @@ func (l *Living) MoveToTarget(target mgl64.Vec3, jumpVelocity float64) {
 	// How far above the entity's feet the obstacle reaches.
 	rise := float64(checkPos.Y()) + low - l.Position().Y()
 
-	climbable := high <= jumpVelocity && low+high <= jumpVelocity
-	if climbable && rise > 0.01 && rise <= jumpVelocity && l.OnGround() {
+	climbable := high <= maxClimb && low+high <= maxClimb
+	if climbable && rise > 0.01 && rise <= maxClimb && l.OnGround() {
 		// Hop up, easing off horizontally while leaving the ground.
-		move[1] = jumpVelocity
+		move[1] = climbVelocity(l.mc.Gravity, maxClimb)
 		move[0] *= 0.50
 		move[2] *= 0.50
 	}
