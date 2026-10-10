@@ -12,18 +12,16 @@ func peak(velocity, gravity float64) float64 {
 	return velocity * velocity / (2 * gravity)
 }
 
-// The gravity each unit in Tower Wars is built with. A hop is handed over as a
-// velocity, so these are what turn one velocity into very different heights.
+// Gravities spanning what entities get built with. A hop is handed over as a
+// velocity, so these are what turn one velocity into very different heights:
+// the walking units in Tower Wars now share 0.5, but they were spread from 0.07
+// to 0.7 and anything built here can pick its own, so the derivation has to
+// hold across the range rather than at one value.
 var unitGravity = map[string]float64{
-	"warrior":      0.5,
-	"bowler":       0.5,
-	"mage":         0.7,
-	"villager":     0.08,
-	"berserk":      0.08,
-	"executioner":  0.08,
-	"giant beast":  0.08,
-	"assassin":     0.07,
-	"babySkeleton": 0.07,
+	"units (shared)": 0.5,
+	"heavy":          0.7,
+	"light":          0.08,
+	"lightest":       0.07,
 }
 
 // The step a hop has to clear is the same for everyone: the pathfinder offers
@@ -59,12 +57,13 @@ func TestNoUnitIsThrownFarAboveTheStep(t *testing.T) {
 	}
 }
 
-// The warrior is the one unit whose hop already looked right, and it is right
-// because its gravity happens to suit a velocity of 1. Deriving the velocity
-// has to leave it where it was, which is the check that the derivation matches
-// what the game already does well rather than just being self-consistent.
+// 0.5 is the gravity the warrior had, the one unit whose hop already looked
+// right, and it looked right because that gravity happens to suit a velocity of
+// 1. It is what every unit is built with now. Deriving the velocity has to
+// leave that case where it was, which is the check that the derivation agrees
+// with what the game already does well rather than just being self-consistent.
 func TestTheWarriorsHopIsUnchanged(t *testing.T) {
-	v := climbVelocity(unitGravity["warrior"], step)
+	v := climbVelocity(unitGravity["units (shared)"], step)
 	if math.Abs(v-1) > 0.05 {
 		t.Errorf("warrior hop velocity moved from 1 to %.3f", v)
 	}
